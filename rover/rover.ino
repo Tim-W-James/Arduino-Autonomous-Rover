@@ -1,28 +1,31 @@
-#include <Servo.h>
+#include <Servo.h>            // note: use of this library disables PWM for pin 9 and 10
 
-#define MOTOR1_ENABLE_PIN 10  // H-bridge enable 1,2 EN
-#define MOTOR1_INPUT_1 4    // H-bridge motor 1 input 1A
-#define MOTOR1_INPUT_2 3    // H-bridge motor 1 input 2A
-#define MOTOR2_ENABLE_PIN 9   // H-bridge enable 3,4 EN
-#define MOTOR2_INPUT_1 5    // H-bridge motor 2 input 3A
-#define MOTOR2_INPUT_2 6    // H-bridge motor 2 input 4A
-#define ECHO_PIN 7        // ultrasonic echo (read)
-#define TRIG_PIN 8        // ultrasonic trigger (write)
-#define SERVO_PIN 11      // servo (write)
+#define MOTOR1_ENABLE_PIN 6   // H-bridge enable 1,2 EN
+#define MOTOR1_INPUT_1 4      // H-bridge motor 1 input 1A
+#define MOTOR1_INPUT_2 3      // H-bridge motor 1 input 2A
+#define MOTOR2_ENABLE_PIN 5   // H-bridge enable 3,4 EN
+#define MOTOR2_INPUT_1 12     // H-bridge motor 2 input 3A
+#define MOTOR2_INPUT_2 13     // H-bridge motor 2 input 4A
+#define ECHO_PIN 7            // ultrasonic echo (read)
+#define TRIG_PIN 8            // ultrasonic trigger (write)
+#define SERVO_PIN 11          // servo (write)
 
 // motor speed range 0-255
-const int MOTOR_SPEED = 255;    
+const int MOTOR_SPEED = 100;
+const int TURN_SPEED = 255;   
 // time it takes for the rover to turn 90 deg
-const int MOTOR_TURN_TIME = 1000; 
-// time a rover will reverse before checking
-const int MOTOR_REVERSE_TIME = 1000; 
+const int MOTOR_TURN_TIME = 440; 
+// time a rover will reverse before checking (ms)
+const int MOTOR_REVERSE_TIME = 5000; 
 
 // ultrasonic detects up to 336cm away - 5cm for error
 const long DISTANCE_LIMIT = 336 - 5;
 // allowed distance between rover and obstacles (cm)
-const long STOPPING_DISTANCE = 100;
+const long STOPPING_DISTANCE = 5;
+// allowed distance between rover and obstacles when turning (cm)
+const long TURN_CHECK_DISTANCE = 14;
 // frequency of ultrasonic polling (ms)
-const int POLLING_DELAY = 500;
+const int POLLING_DELAY = 50;
 
 // output from sonar module
 long obstacleDistanceCM;
@@ -32,7 +35,7 @@ bool isObstacleRight = false;
 // servo
 Servo servo;
 // time allowed for servo movements
-const int SERVO_TURN_TIME = 2000;
+const int SERVO_TURN_TIME = 1000;
 
 void setup()
 {
@@ -137,7 +140,7 @@ bool checkLeft(int deg, long maxDist) {
   return rtn;
 }
 bool checkLeft(int deg) {
-  return checkLeft(deg, STOPPING_DISTANCE);
+  return checkLeft(deg, TURN_CHECK_DISTANCE);
 }
 bool checkLeft() {
   return checkLeft(90);
@@ -152,7 +155,7 @@ bool checkRight(int deg, long maxDist) {
   return rtn;
 }
 bool checkRight(int deg) {
-  return checkRight(deg, STOPPING_DISTANCE);
+  return checkRight(deg, TURN_CHECK_DISTANCE);
 }
 bool checkRight() {
   return checkRight(90);
@@ -165,7 +168,7 @@ bool checkRight() {
 // turn the rover left a specified amount
 void motorsRotateLeft(int dur) {
   motorsLeft();
-  motorsStart(MOTOR_SPEED);
+  motorsStart(TURN_SPEED);
   delay(dur);
   // stop motors and revert to forward direction
   motorsStop();
@@ -178,7 +181,7 @@ void motorsRotateLeft() {
 // turn the rover right a specified amount
 void motorsRotateRight(int dur) {
   motorsRight();
-  motorsStart(MOTOR_SPEED);
+  motorsStart(TURN_SPEED);
   delay(dur);
   // stop motors and revert to forward direction
   motorsStop();
@@ -191,23 +194,23 @@ void motorsRotateRight() {
 // prepare motors for movement in various directions
 
 void motorsForward() {
-  setMotor1Direction(true);
+  setMotor1Direction(false);
   setMotor2Direction(false);
 }
 
 void motorsBackward() {
-  setMotor1Direction(false);
+  setMotor1Direction(true);
   setMotor2Direction(true);
 }
 
 void motorsLeft() {
   setMotor1Direction(false);
-  setMotor2Direction(false);
+  setMotor2Direction(true);
 }
 
 void motorsRight() {
   setMotor1Direction(true);
-  setMotor2Direction(true);
+  setMotor2Direction(false);
 }
 
 // enable motors at a given speed (0-255)
@@ -274,7 +277,7 @@ void servoReset() {
 
 // turn servo left a specified amount
 void servoLeft(int deg) {
-  servo.write(90-deg);
+  servo.write(90+deg);
   delay(SERVO_TURN_TIME); // wait for servo to reach position
 }
 void servoLeft() {
@@ -283,7 +286,7 @@ void servoLeft() {
 
 // turn servo right a specified amount
 void servoRight(int deg) {
-  servo.write(90+deg);
+  servo.write(90-deg);
   delay(SERVO_TURN_TIME); // wait for servo to reach position
 }
 void servoRight() {
