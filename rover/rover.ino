@@ -1,4 +1,7 @@
 #include <Servo.h>            // note: use of this library disables PWM for pin 9 and 10
+// source: Standard Arduino Library
+#include <NewPing.h>          // used for ultrasonic functions. Note: not compatable with TinkerCAD
+// source: https://bitbucket.org/teckel12/arduino-new-ping/src/master/src/NewPing.cpp
 
 #define MOTOR1_ENABLE_PIN 6   // H-bridge enable 1,2 EN
 #define MOTOR1_INPUT_1 4      // H-bridge motor 1 input 1A
@@ -18,14 +21,14 @@ const int MODE = 0;
 
 // motor speed range 0-255
 const int MOTOR_SPEED = 100;
-const int TURN_SPEED = 255; 
+const int TURN_SPEED = 255;
 // calibration to ensure the rover moves in a straight line
 const int MOTOR1_CALIBRATION = 0;
 const int MOTOR2_CALIBRATION = -5;
 // time it takes for the rover to turn 90 deg
-const int MOTOR_TURN_TIME = 410; 
+const int MOTOR_TURN_TIME = 350;
 // time a rover will reverse before checking (ms)
-const int MOTOR_REVERSE_TIME = 1500; 
+const int MOTOR_REVERSE_TIME = 1500;
 bool isReversing = false;
 
 // ultrasonic detects up to 336cm away - 5cm for error
@@ -46,6 +49,8 @@ bool isObstacleRight = false;
 Servo servo;
 // time allowed for servo movements
 const int SERVO_TURN_TIME = 1000;
+
+NewPing sonar(TRIG_PIN, ECHO_PIN, DISTANCE_LIMIT); // setup NewPing (disable for TinkerCAD)
 
 void setup()
 {
@@ -172,7 +177,11 @@ void autonomousNavigation() {
  * ULTRA-SONIC FUNCTIONS
 */
 
-long checkDistance() {
+// calculates median of 5 measurements
+long checkDistance() { // uses NewPing (disable for TinkerCAD)
+  return sonar.convert_cm(sonar.ping_median(5));
+}
+long checkDistanceSingle() { // alternative function that doesn't use NewPing
   // trigger a pulse on the sonar module
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2); // allow time to refresh
