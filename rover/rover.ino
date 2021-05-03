@@ -25,10 +25,12 @@ const int TURN_SPEED = 255;
 // calibration to ensure the rover moves in a straight line
 const int MOTOR1_CALIBRATION = 0;
 const int MOTOR2_CALIBRATION = -5;
-// time it takes for the rover to turn 90 deg
-const int MOTOR_TURN_TIME = 350;
+// time it takes for the rover to turn
+const int MOTOR_TURN_TIME = 350;                  // 90 degrees
+const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME/2; // 45 degrees
 // time a rover will reverse before checking (ms)
 const int MOTOR_REVERSE_TIME = 1500;
+// track the current status of the rover
 bool isReversing = false;
 
 // ultrasonic detects up to 336cm away - 5cm for error
@@ -39,6 +41,9 @@ const long STOPPING_DISTANCE = 4.5;
 const long TURN_CHECK_DISTANCE = 14;
 // frequency of ultrasonic polling (ms)
 const int POLLING_DELAY = 50;
+// max parameters based on expected maze dimensions for finding angled degree surfaces
+const int MAX_POSSIBLE_DIST = 100;
+const int MAX_POSSIBLE_DIST_SIDE = 15;
 
 // output from sonar module
 long obstacleDistanceCM;
@@ -114,7 +119,6 @@ void autonomousNavigation() {
     // check left and right
     isObstacleLeft = checkLeft();
     isObstacleRight = checkRight();
-    // TODO 45 deg angles
     
     if (!isObstacleLeft) {        // turn left if clear
       Serial.println("Turning left...");
@@ -160,6 +164,47 @@ void autonomousNavigation() {
       motorsBackward();
       motorsStart(MOTOR_SPEED);
       delay(MOTOR_REVERSE_TIME);
+    }
+  }
+  // if measured distance is greater than the max possible distance the rover can be from a wall,
+  // we should check if the signal has been reflected by an angled wall
+  // TODO improve angled wall detection
+  else if (obstacleDistanceCM > MAX_POSSIBLE_DIST) {    
+    Serial.println("No obstacle found...");
+    Serial.println("Checking if approaching angled wall...");
+    
+    // check left and right 45 degrees to be parallel with an angled wall
+    isObstacleLeft = checkLeft(45);
+    isObstacleRight = checkRight(45);
+
+    // navigate depending on the presence of an angled wall, else wait until close enough
+    if (!isObstacleLeft && isObstacleRight) {
+      Serial.println("Turning 45 degrees left...");
+      motorsRotateLeft(MOTOR_TURN_TIME_45);
+      servoLeft(45);
+      // wait until angled section finishes to return to grid navigation
+      while (checkDistance() < TURN_CHECK_DISTANCE) {
+        delay(POLLING_DELAY);        
+      }
+      Serial.println("Finished angled section...");
+      motorsRotateLeft(MOTOR_TURN_TIME_45);
+      servoReset();
+    }
+    else if (!isObstacleRight && isObstacleLeft) {
+      Serial.println("Turning 45 degrees right...");
+      motorsRotateRight(MOTOR_TURN_TIME_45);
+      servoRight(45);
+      // wait until angled section finishes to return to grid navigation
+      while (checkDistance() < TURN_CHECK_DISTANCE) {
+        delay(POLLING_DELAY);        
+      }
+      Serial.println("Finished angled section...");
+      motorsRotateRight(MOTOR_TURN_TIME_45);
+      servoReset();
+    }
+    // not yet close enough to angled wall
+    else {
+      delay(POLLING_DELAY);
     }
   }
   else {
