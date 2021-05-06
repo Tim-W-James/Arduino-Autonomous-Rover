@@ -46,7 +46,7 @@ const long TURN_CHECK_DISTANCE = 14;
 const int POLLING_DELAY = 25;
 // frequency of ultrasonic polling for angled walls (ms)
 const int ANGLED_POLLING_DELAY = POLLING_DELAY*10;
-// max parameters based on expected maze dimensions for finding angled degree surfaces
+// max parameters based on expected maze dimensions, used for finding angled surfaces
 const int MAX_POSSIBLE_DIST = 40;
 
 // output from sonar module
