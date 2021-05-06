@@ -25,9 +25,12 @@ const int TURN_SPEED = 255;
 // calibration to ensure the rover moves in a straight line
 const int MOTOR1_CALIBRATION = 0;
 const int MOTOR2_CALIBRATION = -5;
-// time it takes for the rover to turn
-const int MOTOR_TURN_TIME = 350;                  // 90 degrees
-const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME/2; // 45 degrees
+// time it takes for the rover to turn. Different surfaces need a different turn time:
+// SURFACE || TURN_TIME
+// maze    || 420
+// table   || 350
+const int MOTOR_TURN_TIME = 420;                     // 90 degrees
+const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME*0.35; // 45 degrees (adjusted)
 // time a rover will reverse before checking (ms)
 const int MOTOR_REVERSE_TIME = 1500;
 // track the current status of the rover
@@ -36,14 +39,15 @@ bool isReversing = false;
 // ultrasonic detects up to 336cm away - 5cm for error
 const long DISTANCE_LIMIT = 336 - 5;
 // allowed distance between rover and obstacles (cm)
-const long STOPPING_DISTANCE = 4.5;
+const long STOPPING_DISTANCE = 5;
 // allowed distance between rover and obstacles when turning (cm)
 const long TURN_CHECK_DISTANCE = 14;
 // frequency of ultrasonic polling (ms)
-const int POLLING_DELAY = 50;
+const int POLLING_DELAY = 25;
+// frequency of ultrasonic polling for angled walls (ms)
+const int ANGLED_POLLING_DELAY = POLLING_DELAY*10;
 // max parameters based on expected maze dimensions for finding angled degree surfaces
-const int MAX_POSSIBLE_DIST = 100;
-const int MAX_POSSIBLE_DIST_SIDE = 15;
+const int MAX_POSSIBLE_DIST = 40;
 
 // output from sonar module
 long obstacleDistanceCM;
@@ -53,7 +57,7 @@ bool isObstacleRight = false;
 // servo
 Servo servo;
 // time allowed for servo movements
-const int SERVO_TURN_TIME = 1000;
+const int SERVO_TURN_TIME = 300;
 
 NewPing sonar(TRIG_PIN, ECHO_PIN, DISTANCE_LIMIT); // setup NewPing (disable for TinkerCAD)
 
@@ -111,101 +115,19 @@ void autonomousNavigation() {
     Serial.println("No obstacle found");
   }
   
-  // stop motor if obstacle gets too close
+  // stop motor if obstacle gets too close and find next path
   if (obstacleDistanceCM < STOPPING_DISTANCE && !isReversing) {
-    motorsStop();
-    Serial.println("Stopping...");
-    
-    // check left and right
-    isObstacleLeft = checkLeft();
-    isObstacleRight = checkRight();
-    
-    if (!isObstacleLeft) {        // turn left if clear
-      Serial.println("Turning left...");
-      motorsRotateLeft();
-    }
-    else if (!isObstacleRight) {  // turn right if clear
-      Serial.println("Turning right...");
-      motorsRotateRight();
-    }
-    else {                        // begin reversing
-      Serial.println("Dead end found, reversing...");
-      motorsBackward();
-      motorsStartCalibrated(MOTOR_SPEED);
-      isReversing = true; // enter reverse mode
-      delay(MOTOR_REVERSE_TIME);
-    }
+    autonomousCheckLeftRightPath();
   }
-  // operate differently if reversing
-  // TODO improve backtracking mode
+  // if reversing, continue reversing until an alternate path is found
   else if (isReversing) {
-    motorsStop();
-    Serial.println("Checking alternate paths...");
-    
-    // check left and right
-    isObstacleLeft = checkLeft();
-    isObstacleRight = checkRight();
-    // TODO 45 deg angles
-    
-    if (!isObstacleLeft) {      // turn left if clear
-      Serial.println("Alternate path found");
-      Serial.println("Turning left...");
-      motorsRotateLeft();
-      isReversing = false;
-    }
-    else if (!isObstacleRight) {  // turn right if clear
-      Serial.println("Alternate path found");
-      Serial.println("Turning right...");
-      motorsRotateRight();
-      isReversing = false;
-    }
-    else {
-      Serial.println("Reversing...");
-      motorsBackward();
-      motorsStart(MOTOR_SPEED);
-      delay(MOTOR_REVERSE_TIME);
-    }
-  }
+    autonomousReversePath();
+  }  
   // if measured distance is greater than the max possible distance the rover can be from a wall,
-  // we should check if the signal has been reflected by an angled wall
-  // TODO improve angled wall detection
-  else if (obstacleDistanceCM > MAX_POSSIBLE_DIST) {    
-    Serial.println("No obstacle found...");
-    Serial.println("Checking if approaching angled wall...");
-    
-    // check left and right 45 degrees to be parallel with an angled wall
-    isObstacleLeft = checkLeft(45);
-    isObstacleRight = checkRight(45);
-
-    // navigate depending on the presence of an angled wall, else wait until close enough
-    if (!isObstacleLeft && isObstacleRight) {
-      Serial.println("Turning 45 degrees left...");
-      motorsRotateLeft(MOTOR_TURN_TIME_45);
-      servoLeft(45);
-      // wait until angled section finishes to return to grid navigation
-      while (checkDistance() < TURN_CHECK_DISTANCE) {
-        delay(POLLING_DELAY);        
-      }
-      Serial.println("Finished angled section...");
-      motorsRotateLeft(MOTOR_TURN_TIME_45);
-      servoReset();
-    }
-    else if (!isObstacleRight && isObstacleLeft) {
-      Serial.println("Turning 45 degrees right...");
-      motorsRotateRight(MOTOR_TURN_TIME_45);
-      servoRight(45);
-      // wait until angled section finishes to return to grid navigation
-      while (checkDistance() < TURN_CHECK_DISTANCE) {
-        delay(POLLING_DELAY);        
-      }
-      Serial.println("Finished angled section...");
-      motorsRotateRight(MOTOR_TURN_TIME_45);
-      servoReset();
-    }
-    // not yet close enough to angled wall
-    else {
-      delay(POLLING_DELAY);
-    }
+  // we should check if the signal has been reflected by an angled wall.
+  // if an angled path is found, follow it until it ends to return back to grid naviagation
+  else if (obstacleDistanceCM > MAX_POSSIBLE_DIST) {  
+    autonomousAngledPath();
   }
   else {
     motorsForward();
@@ -216,6 +138,113 @@ void autonomousNavigation() {
   // delay before next reading
   delay(POLLING_DELAY);
   Serial.println();
+}
+
+// stop motor and find next path
+void autonomousCheckLeftRightPath() {
+  motorsStop();
+  Serial.println("Stopping...");
+  
+  // check left and right at 90 and 45 degree angles
+  isObstacleLeft = checkLeftBoth();
+  isObstacleRight = checkRightBoth();
+
+  if (!isObstacleRight) {        // turn right if clear
+    Serial.println("Turning right...");
+    motorsRotateRight();
+  }
+  else if (!isObstacleLeft) {    // turn left if clear
+    Serial.println("Turning left...");
+    motorsRotateLeft();
+  }    
+  else {                         // begin reversing
+    Serial.println("Dead end found, reversing...");
+    motorsBackward();
+    motorsStartCalibrated(MOTOR_SPEED);
+    isReversing = true; // enter reverse mode
+    delay(MOTOR_REVERSE_TIME);
+  }
+}
+
+// continue reversing until an alternate path is found
+void autonomousReversePath() {
+  motorsStop();
+  Serial.println("Checking alternate paths...");
+  
+  // check left and right
+  isObstacleLeft = checkLeft();
+  isObstacleRight = checkRight();
+  
+  if (!isObstacleLeft) {      // turn left if clear
+    Serial.println("Alternate path found");
+    Serial.println("Turning left...");
+    motorsRotateLeft();
+    isReversing = false;
+  }
+  else if (!isObstacleRight) {  // turn right if clear
+    Serial.println("Alternate path found");
+    Serial.println("Turning right...");
+    motorsRotateRight();
+    isReversing = false;
+  }
+  else {
+    Serial.println("Reversing...");
+    motorsBackward();
+    motorsStart(MOTOR_SPEED);
+    delay(MOTOR_REVERSE_TIME);
+  }
+}
+
+// if an angled path is found, follow it until it ends to return back to grid naviagation
+void autonomousAngledPath() {
+  motorsStop();  
+  Serial.println("No obstacle found...");
+  Serial.println("Checking if approaching angled wall...");
+  
+  // check left and right 45 degrees to be parallel with an angled wall
+  isObstacleLeft = checkLeft(45, STOPPING_DISTANCE);
+  isObstacleRight = checkRight(45, STOPPING_DISTANCE);
+
+  // navigate depending on the presence of an angled wall, else wait until close enough
+  // TODO improve this detection - sometimes turns early when following a parallel wall
+  if (!isObstacleLeft && isObstacleRight) {
+    Serial.println("Turning 45 degrees left...");
+    motorsRotateLeft(MOTOR_TURN_TIME_45);
+    servoLeft();
+    motorsForward();
+    motorsStartCalibrated(MOTOR_SPEED);
+    delay(POLLING_DELAY);
+    // wait until angled section finishes to return to grid navigation
+    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
+      delay(POLLING_DELAY);
+    }
+    delay(ANGLED_POLLING_DELAY*2);
+    Serial.println("Finished angled section...");
+    motorsRotateLeft(MOTOR_TURN_TIME_45);
+    servoReset();
+  }
+  else if (!isObstacleRight && isObstacleLeft) {
+    Serial.println("Turning 45 degrees right...");
+    motorsRotateRight(MOTOR_TURN_TIME_45);
+    servoRight();
+    motorsForward();
+    motorsStartCalibrated(MOTOR_SPEED);
+    delay(POLLING_DELAY);
+    // wait until angled section finishes to return to grid navigation
+    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
+      delay(POLLING_DELAY);
+    }
+    delay(ANGLED_POLLING_DELAY*2);
+    Serial.println("Finished angled section...");
+    motorsRotateRight(MOTOR_TURN_TIME_45);
+    servoReset();
+  }
+  // not yet close enough to angled wall
+  else {
+    motorsForward();
+    motorsStartCalibrated(MOTOR_SPEED);
+    delay(ANGLED_POLLING_DELAY);
+  }
 }
 
 /*
@@ -256,7 +285,21 @@ bool checkLeft(int deg) {
   return checkLeft(deg, TURN_CHECK_DISTANCE);
 }
 bool checkLeft() {
-  return checkLeft(90);
+  return checkLeft(80); // 80 is used to correct servo
+}
+
+// checks left 90 and 45 degrees without reset inbetween
+bool checkLeftBoth() {
+  servoLeft();
+  bool rtn90 = (checkDistance() < TURN_CHECK_DISTANCE);
+  servoLeft(45);
+  bool rtn45 = (checkDistance() < TURN_CHECK_DISTANCE);
+  bool rtn = rtn90 || rtn45;
+  if (!rtn) {
+    Serial.println("Left is clear");
+  }
+  servoReset(); // reset servo to neutral position
+  return rtn;
 }
 
 // rotate servo right a specified amount and check for obstacle
@@ -274,7 +317,21 @@ bool checkRight(int deg) {
   return checkRight(deg, TURN_CHECK_DISTANCE);
 }
 bool checkRight() {
-  return checkRight(90);
+  return checkRight(80); // 80 is used to correct servo
+}
+
+// checks right 90 and 45 degrees without reset inbetween
+bool checkRightBoth() {
+  servoRight();
+  bool rtn90 = (checkDistance() < TURN_CHECK_DISTANCE);
+  servoRight(45);
+  bool rtn45 = (checkDistance() < TURN_CHECK_DISTANCE);
+  bool rtn = rtn90 || rtn45;
+  if (!rtn) {
+    Serial.println("Right is clear");
+  }
+  servoReset(); // reset servo to neutral position
+  return rtn;
 }
 
 /*
@@ -283,6 +340,8 @@ bool checkRight() {
 
 // turn the rover left a specified amount
 void motorsRotateLeft(int dur) {
+  motorsStop();
+  delay(250);
   motorsLeft();
   motorsStart(TURN_SPEED);
   delay(dur);
@@ -297,6 +356,8 @@ void motorsRotateLeft() {
 
 // turn the rover right a specified amount
 void motorsRotateRight(int dur) {
+  motorsStop();
+  delay(250);
   motorsRight();
   motorsStart(TURN_SPEED);
   delay(dur);
@@ -407,7 +468,7 @@ void servoLeft(int deg) {
   delay(SERVO_TURN_TIME); // wait for servo to reach position
 }
 void servoLeft() {
-  servoLeft(90);
+  servoLeft(80); // 80 is used to correct servo
 }
 
 // turn servo right a specified amount
@@ -416,7 +477,7 @@ void servoRight(int deg) {
   delay(SERVO_TURN_TIME); // wait for servo to reach position
 }
 void servoRight() {
-  servoRight(90);
+  servoRight(80); // 80 is used to correct servo
 }
 
 /* 
