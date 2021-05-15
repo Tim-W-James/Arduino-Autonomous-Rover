@@ -9,8 +9,12 @@
 #define MOTOR2_ENABLE_PIN 5   // H-bridge enable 3,4 EN
 #define MOTOR2_INPUT_1 12     // H-bridge motor 2 input 3A
 #define MOTOR2_INPUT_2 13     // H-bridge motor 2 input 4A
-#define ECHO_PIN 7            // ultrasonic echo (read)
-#define TRIG_PIN 8            // ultrasonic trigger (write)
+#define ECHO_PIN_1 7          // ultrasonic echo 1 (read) - forward
+#define TRIG_PIN_1 8          // ultrasonic trigger 1 (write) - forward
+#define ECHO_PIN_2 2          // ultrasonic echo 1 (read) - left
+#define TRIG_PIN_2 1          // ultrasonic trigger 1 (write) - left
+#define ECHO_PIN_3 10         // ultrasonic echo 1 (read) - right
+#define TRIG_PIN_3 9          // ultrasonic trigger 1 (write) - right
 #define SERVO_PIN 11          // servo (write)
 
 // define the operation mode of the rover.
@@ -20,19 +24,19 @@
 const int MODE = 0;
 
 // motor speed range 0-255
-const int MOTOR_SPEED = 100;
+const int MOTOR_SPEED = 90;
 const int TURN_SPEED = 255;
 // calibration to ensure the rover moves in a straight line
-const int MOTOR1_CALIBRATION = 0;
-const int MOTOR2_CALIBRATION = -5;
+const int MOTOR1_CALIBRATION = 0; //left
+const int MOTOR2_CALIBRATION = -4; // right
 // time it takes for the rover to turn. Different surfaces need a different turn time:
 // SURFACE || TURN_TIME
 // maze    || 420
 // table   || 350
-const int MOTOR_TURN_TIME = 420;                     // 90 degrees
+const int MOTOR_TURN_TIME = 430;                     // 90 degrees
 const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME*0.35; // 45 degrees (adjusted)
 // time a rover will reverse before checking (ms)
-const int MOTOR_REVERSE_TIME = 1500;
+const int MOTOR_REVERSE_TIME = 300;
 // track the current status of the rover
 bool isReversing = false;
 
@@ -43,23 +47,31 @@ const long STOPPING_DISTANCE = 5;
 // allowed distance between rover and obstacles when turning (cm)
 const long TURN_CHECK_DISTANCE = 14;
 // frequency of ultrasonic polling (ms)
-const int POLLING_DELAY = 25;
+const int POLLING_DELAY = 10;
 // frequency of ultrasonic polling for angled walls (ms)
-const int ANGLED_POLLING_DELAY = POLLING_DELAY*10;
+const int ANGLED_POLLING_DELAY = POLLING_DELAY*4;
 // max parameters based on expected maze dimensions, used for finding angled surfaces
 const int MAX_POSSIBLE_DIST = 40;
+// left/right correction distance (cm)
+const long SIDE_CORRECTION_DISTANCE = 3;
+// left/right correction amount (ms)
+const int CORRECTION_AMOUNT = 25;
 
 // output from sonar module
 long obstacleDistanceCM;
 bool isObstacleLeft = false;
 bool isObstacleRight = false;
+bool hasCorrected = false;
 
 // servo
 Servo servo;
 // time allowed for servo movements
-const int SERVO_TURN_TIME = 300;
+const int SERVO_TURN_TIME = 350;
 
-NewPing sonar(TRIG_PIN, ECHO_PIN, DISTANCE_LIMIT); // setup NewPing (disable for TinkerCAD)
+// setup NewPing (disable for TinkerCAD)
+NewPing sonar_1(TRIG_PIN_1, ECHO_PIN_1, DISTANCE_LIMIT); // forward
+NewPing sonar_2(TRIG_PIN_2, ECHO_PIN_2, DISTANCE_LIMIT); // left
+NewPing sonar_3(TRIG_PIN_3, ECHO_PIN_3, DISTANCE_LIMIT); // right
 
 void setup()
 {
@@ -72,8 +84,8 @@ void setup()
   pinMode(MOTOR2_INPUT_2, OUTPUT);
   
   // setup ultrasonic pins
-  pinMode(ECHO_PIN, INPUT);
-  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN_1, INPUT);
+  pinMode(TRIG_PIN_1, OUTPUT);
   
   // start with motors disabled and moving forwards
   motorsStop();
@@ -83,6 +95,7 @@ void setup()
   servoReset();
   
   Serial.begin(9600);
+  delay(4000); // initial delay
 }
 
 void loop()
@@ -101,15 +114,26 @@ void loop()
   }
 }
 
+// FUNCTION FOR NAVIAGTION
 // primary function for test levels 2 - 5
 void autonomousNavigation() {
+  // ensure the rover is straight
+  if (hasCorrected) {
+    correctLeft();
+    correctRight();
+    hasCorrected = false;    
+  }
+  else {
+    hasCorrected = true;    
+  }
+  
   obstacleDistanceCM = checkDistance();
   
   // print distance to serial monitor
   if (obstacleDistanceCM < DISTANCE_LIMIT) {    
     Serial.print("Distance from obstacle: ");
     Serial.print(obstacleDistanceCM);
-    Serial.println("cm");
+    Serial.println("cm");    
   }
   else {
     Serial.println("No obstacle found");
@@ -149,7 +173,10 @@ void autonomousCheckLeftRightPath() {
   isObstacleLeft = checkLeftBoth();
   isObstacleRight = checkRightBoth();
 
-  if (!isObstacleRight) {        // turn right if clear
+  if (checkDistance() > STOPPING_DISTANCE) {    
+    Serial.println("Moving forward...");     
+  }
+  else if (!isObstacleRight) {        // turn right if clear
     Serial.println("Turning right...");
     motorsRotateRight();
   }
@@ -202,42 +229,42 @@ void autonomousAngledPath() {
   Serial.println("Checking if approaching angled wall...");
   
   // check left and right 45 degrees to be parallel with an angled wall
-  isObstacleLeft = checkLeft(45, STOPPING_DISTANCE);
-  isObstacleRight = checkRight(45, STOPPING_DISTANCE);
+  isObstacleLeft = checkLeft(55, STOPPING_DISTANCE);
+  isObstacleRight = checkRight(55, STOPPING_DISTANCE);
 
   // navigate depending on the presence of an angled wall, else wait until close enough
   // TODO improve this detection - sometimes turns early when following a parallel wall
   if (!isObstacleLeft && isObstacleRight) {
     Serial.println("Turning 45 degrees left...");
     motorsRotateLeft(MOTOR_TURN_TIME_45);
-    servoLeft();
-    motorsForward();
-    motorsStartCalibrated(MOTOR_SPEED);
-    delay(POLLING_DELAY);
-    // wait until angled section finishes to return to grid navigation
-    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
-      delay(POLLING_DELAY);
-    }
-    delay(ANGLED_POLLING_DELAY*2);
-    Serial.println("Finished angled section...");
-    motorsRotateLeft(MOTOR_TURN_TIME_45);
-    servoReset();
+//    servoLeft();
+//    motorsForward();
+//    motorsStartCalibrated(MOTOR_SPEED);
+//    delay(POLLING_DELAY);
+//    // wait until angled section finishes to return to grid navigation
+//    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
+//      delay(POLLING_DELAY);
+//    }
+//    delay(ANGLED_POLLING_DELAY*2);
+//    Serial.println("Finished angled section...");
+//    motorsRotateLeft(MOTOR_TURN_TIME_45);
+//    servoReset();
   }
   else if (!isObstacleRight && isObstacleLeft) {
     Serial.println("Turning 45 degrees right...");
     motorsRotateRight(MOTOR_TURN_TIME_45);
-    servoRight();
-    motorsForward();
-    motorsStartCalibrated(MOTOR_SPEED);
-    delay(POLLING_DELAY);
-    // wait until angled section finishes to return to grid navigation
-    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
-      delay(POLLING_DELAY);
-    }
-    delay(ANGLED_POLLING_DELAY*2);
-    Serial.println("Finished angled section...");
-    motorsRotateRight(MOTOR_TURN_TIME_45);
-    servoReset();
+//    servoRight();
+//    motorsForward();
+//    motorsStartCalibrated(MOTOR_SPEED);
+//    delay(POLLING_DELAY);
+//    // wait until angled section finishes to return to grid navigation
+//    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
+//      delay(POLLING_DELAY);
+//    }
+//    delay(ANGLED_POLLING_DELAY*2);
+//    Serial.println("Finished angled section...");
+//    motorsRotateRight(MOTOR_TURN_TIME_45);
+//    servoReset();
   }
   // not yet close enough to angled wall
   else {
@@ -252,22 +279,54 @@ void autonomousAngledPath() {
 */
 
 // calculates median of 5 measurements
-long checkDistance() { // uses NewPing (disable for TinkerCAD)
-  return sonar.convert_cm(sonar.ping_median(5));
+long checkDistance(NewPing sensor) { // uses NewPing (disable for TinkerCAD)
+  long rtn = sensor.convert_cm(sensor.ping_median(5));
+  if (rtn == 0) { // ensure that there is no error reading of 0
+    return DISTANCE_LIMIT;
+  }
+  return rtn;
+}
+long checkDistance() {
+  return checkDistance(sonar_1);
 }
 long checkDistanceSingle() { // alternative function that doesn't use NewPing
   // trigger a pulse on the sonar module
-  digitalWrite(TRIG_PIN, LOW);
+  digitalWrite(TRIG_PIN_1, LOW);
   delayMicroseconds(2); // allow time to refresh
-  digitalWrite(TRIG_PIN, HIGH);
+  digitalWrite(TRIG_PIN_1, HIGH);
   delayMicroseconds(10); // must be enabled for 10us to trigger
-  digitalWrite(TRIG_PIN, LOW);
+  digitalWrite(TRIG_PIN_1, LOW);
   
   // measure the duration of the echo
-  long durationRaw = pulseIn(ECHO_PIN, HIGH);
+  long durationRaw = pulseIn(ECHO_PIN_1, HIGH);
   // convert to centimeters given that the speed of sound is 340 m/s
   // and that we need to account for the return trip
   return (durationRaw / 29 / 2);
+}
+
+// checks left and right with secondary sensors to
+// ensure the rover does not stray into a wall
+bool correctLeft() {
+  long secondaryLeftDist = checkDistance(sonar_2); // uses NewPing (disable for TinkerCAD)
+  Serial.print("Dist from Left: ");
+  Serial.println(secondaryLeftDist);
+  if (secondaryLeftDist < SIDE_CORRECTION_DISTANCE) {
+    motorsRotateRight(CORRECTION_AMOUNT); // straighten rover
+    Serial.println("Too close to left wall, correcting...");
+    return true;
+  }
+  return false;  
+}
+long correctRight() { 
+  long secondaryRightDist = checkDistance(sonar_3); // uses NewPing (disable for TinkerCAD)
+  Serial.print("Dist from Right: ");
+  Serial.println(secondaryRightDist);
+  if (secondaryRightDist - 1 < SIDE_CORRECTION_DISTANCE) { // calibration for faulty sensor
+    motorsRotateLeft(CORRECTION_AMOUNT); // straighten rover
+    Serial.println("Too close to right wall, correcting...");
+    return true;
+  }
+  return false;  
 }
 
 // rotate servo left a specified amount and check for obstacle
@@ -294,7 +353,7 @@ bool checkLeftBoth() {
   bool rtn90 = (checkDistance() < TURN_CHECK_DISTANCE);
   servoLeft(45);
   bool rtn45 = (checkDistance() < TURN_CHECK_DISTANCE);
-  bool rtn = rtn90 || rtn45;
+  bool rtn = rtn90; // (rtn90 && !rtn45) || (!rtn90 && rtn45)
   if (!rtn) {
     Serial.println("Left is clear");
   }
@@ -326,7 +385,7 @@ bool checkRightBoth() {
   bool rtn90 = (checkDistance() < TURN_CHECK_DISTANCE);
   servoRight(45);
   bool rtn45 = (checkDistance() < TURN_CHECK_DISTANCE);
-  bool rtn = rtn90 || rtn45;
+  bool rtn = rtn90; // (rtn90 && !rtn45) || (!rtn90 && rtn45)
   if (!rtn) {
     Serial.println("Right is clear");
   }
@@ -468,7 +527,7 @@ void servoLeft(int deg) {
   delay(SERVO_TURN_TIME); // wait for servo to reach position
 }
 void servoLeft() {
-  servoLeft(80); // 80 is used to correct servo
+  servoLeft(90);
 }
 
 // turn servo right a specified amount
@@ -477,7 +536,7 @@ void servoRight(int deg) {
   delay(SERVO_TURN_TIME); // wait for servo to reach position
 }
 void servoRight() {
-  servoRight(80); // 80 is used to correct servo
+  servoRight(90);
 }
 
 /* 
