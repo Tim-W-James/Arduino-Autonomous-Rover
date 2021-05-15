@@ -33,8 +33,8 @@ const int MOTOR2_CALIBRATION = -4; // right
 // SURFACE || TURN_TIME
 // maze    || 420
 // table   || 350
-const int MOTOR_TURN_TIME = 430;                     // 90 degrees
-const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME*0.35; // 45 degrees (adjusted)
+const int MOTOR_TURN_TIME = 420;                     // 90 degrees
+const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME*0.2;  // 45 degrees (adjusted) 0.35
 // time a rover will reverse before checking (ms)
 const int MOTOR_REVERSE_TIME = 300;
 // track the current status of the rover
@@ -47,15 +47,15 @@ const long STOPPING_DISTANCE = 5;
 // allowed distance between rover and obstacles when turning (cm)
 const long TURN_CHECK_DISTANCE = 14;
 // frequency of ultrasonic polling (ms)
-const int POLLING_DELAY = 10;
+const int POLLING_DELAY = 15;
 // frequency of ultrasonic polling for angled walls (ms)
 const int ANGLED_POLLING_DELAY = POLLING_DELAY*4;
 // max parameters based on expected maze dimensions, used for finding angled surfaces
-const int MAX_POSSIBLE_DIST = 40;
+const int MAX_POSSIBLE_DIST = 30;
 // left/right correction distance (cm)
-const long SIDE_CORRECTION_DISTANCE = 3;
+const long SIDE_CORRECTION_DISTANCE = 3.5;
 // left/right correction amount (ms)
-const int CORRECTION_AMOUNT = 25;
+const int CORRECTION_AMOUNT = 20;
 
 // output from sonar module
 long obstacleDistanceCM;
@@ -118,6 +118,7 @@ void loop()
 // primary function for test levels 2 - 5
 void autonomousNavigation() {
   // ensure the rover is straight
+  // check every second iteration to ensure primary sensor is not delayed
   if (hasCorrected) {
     correctLeft();
     correctRight();
@@ -148,8 +149,7 @@ void autonomousNavigation() {
     autonomousReversePath();
   }  
   // if measured distance is greater than the max possible distance the rover can be from a wall,
-  // we should check if the signal has been reflected by an angled wall.
-  // if an angled path is found, follow it until it ends to return back to grid naviagation
+  // should check if the signal has been reflected by an angled wall
   else if (obstacleDistanceCM > MAX_POSSIBLE_DIST) {  
     autonomousAngledPath();
   }
@@ -222,15 +222,15 @@ void autonomousReversePath() {
   }
 }
 
-// if an angled path is found, follow it until it ends to return back to grid naviagation
+// if an angled path is found, turn 45 degrees
 void autonomousAngledPath() {
   motorsStop();  
   Serial.println("No obstacle found...");
   Serial.println("Checking if approaching angled wall...");
   
   // check left and right 45 degrees to be parallel with an angled wall
-  isObstacleLeft = checkLeft(55, STOPPING_DISTANCE);
-  isObstacleRight = checkRight(55, STOPPING_DISTANCE);
+  isObstacleLeft = checkLeft(50, STOPPING_DISTANCE*1.2);
+  isObstacleRight = checkRight(50, STOPPING_DISTANCE*1.2);
 
   // navigate depending on the presence of an angled wall, else wait until close enough
   // TODO improve this detection - sometimes turns early when following a parallel wall
@@ -310,7 +310,7 @@ bool correctLeft() {
   long secondaryLeftDist = checkDistance(sonar_2); // uses NewPing (disable for TinkerCAD)
   Serial.print("Dist from Left: ");
   Serial.println(secondaryLeftDist);
-  if (secondaryLeftDist < SIDE_CORRECTION_DISTANCE) {
+  if (secondaryLeftDist - 1 < SIDE_CORRECTION_DISTANCE) {
     motorsRotateRight(CORRECTION_AMOUNT); // straighten rover
     Serial.println("Too close to left wall, correcting...");
     return true;
@@ -321,7 +321,7 @@ long correctRight() {
   long secondaryRightDist = checkDistance(sonar_3); // uses NewPing (disable for TinkerCAD)
   Serial.print("Dist from Right: ");
   Serial.println(secondaryRightDist);
-  if (secondaryRightDist - 1 < SIDE_CORRECTION_DISTANCE) { // calibration for faulty sensor
+  if (secondaryRightDist - 1 < SIDE_CORRECTION_DISTANCE) {
     motorsRotateLeft(CORRECTION_AMOUNT); // straighten rover
     Serial.println("Too close to right wall, correcting...");
     return true;
