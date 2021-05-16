@@ -36,7 +36,7 @@ const int MOTOR2_CALIBRATION = -4; // right
 const int MOTOR_TURN_TIME = 420;                     // 90 degrees
 const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME*0.2;  // 45 degrees (adjusted) 0.35
 // time a rover will reverse before checking (ms)
-const int MOTOR_REVERSE_TIME = 300;
+const int MOTOR_REVERSE_TIME = 200;
 // track the current status of the rover
 bool isReversing = false;
 
@@ -56,12 +56,12 @@ const int MAX_POSSIBLE_DIST = 30;
 const long SIDE_CORRECTION_DISTANCE = 3.5;
 // left/right correction amount (ms)
 const int CORRECTION_AMOUNT = 20;
+bool hasCorrected = false;
 
 // output from sonar module
 long obstacleDistanceCM;
 bool isObstacleLeft = false;
 bool isObstacleRight = false;
-bool hasCorrected = false;
 
 // servo
 Servo servo;
@@ -173,7 +173,7 @@ void autonomousCheckLeftRightPath() {
   isObstacleLeft = checkLeftBoth();
   isObstacleRight = checkRightBoth();
 
-  if (checkDistance() > STOPPING_DISTANCE) {    
+  if (checkDistance() > STOPPING_DISTANCE) { // check forward again in case of error  
     Serial.println("Moving forward...");     
   }
   else if (!isObstacleRight) {        // turn right if clear
@@ -237,34 +237,10 @@ void autonomousAngledPath() {
   if (!isObstacleLeft && isObstacleRight) {
     Serial.println("Turning 45 degrees left...");
     motorsRotateLeft(MOTOR_TURN_TIME_45);
-//    servoLeft();
-//    motorsForward();
-//    motorsStartCalibrated(MOTOR_SPEED);
-//    delay(POLLING_DELAY);
-//    // wait until angled section finishes to return to grid navigation
-//    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
-//      delay(POLLING_DELAY);
-//    }
-//    delay(ANGLED_POLLING_DELAY*2);
-//    Serial.println("Finished angled section...");
-//    motorsRotateLeft(MOTOR_TURN_TIME_45);
-//    servoReset();
   }
   else if (!isObstacleRight && isObstacleLeft) {
     Serial.println("Turning 45 degrees right...");
     motorsRotateRight(MOTOR_TURN_TIME_45);
-//    servoRight();
-//    motorsForward();
-//    motorsStartCalibrated(MOTOR_SPEED);
-//    delay(POLLING_DELAY);
-//    // wait until angled section finishes to return to grid navigation
-//    while (checkDistance() < TURN_CHECK_DISTANCE*2) {
-//      delay(POLLING_DELAY);
-//    }
-//    delay(ANGLED_POLLING_DELAY*2);
-//    Serial.println("Finished angled section...");
-//    motorsRotateRight(MOTOR_TURN_TIME_45);
-//    servoReset();
   }
   // not yet close enough to angled wall
   else {
@@ -289,16 +265,16 @@ long checkDistance(NewPing sensor) { // uses NewPing (disable for TinkerCAD)
 long checkDistance() {
   return checkDistance(sonar_1);
 }
-long checkDistanceSingle() { // alternative function that doesn't use NewPing
+long checkDistanceSingle(int TRIG_PIN, int ECHO_PIN) { // alternative function that doesn't use NewPing
   // trigger a pulse on the sonar module
-  digitalWrite(TRIG_PIN_1, LOW);
+  digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2); // allow time to refresh
-  digitalWrite(TRIG_PIN_1, HIGH);
+  digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10); // must be enabled for 10us to trigger
-  digitalWrite(TRIG_PIN_1, LOW);
+  digitalWrite(TRIG_PIN, LOW);
   
   // measure the duration of the echo
-  long durationRaw = pulseIn(ECHO_PIN_1, HIGH);
+  long durationRaw = pulseIn(ECHO_PIN, HIGH);
   // convert to centimeters given that the speed of sound is 340 m/s
   // and that we need to account for the return trip
   return (durationRaw / 29 / 2);
@@ -353,6 +329,8 @@ bool checkLeftBoth() {
   bool rtn90 = (checkDistance() < TURN_CHECK_DISTANCE);
   servoLeft(45);
   bool rtn45 = (checkDistance() < TURN_CHECK_DISTANCE);
+  // disabled 45 check due to false detection of walls,
+  // when rover is not perfectly parallel
   bool rtn = rtn90; // (rtn90 && !rtn45) || (!rtn90 && rtn45)
   if (!rtn) {
     Serial.println("Left is clear");
@@ -385,6 +363,8 @@ bool checkRightBoth() {
   bool rtn90 = (checkDistance() < TURN_CHECK_DISTANCE);
   servoRight(45);
   bool rtn45 = (checkDistance() < TURN_CHECK_DISTANCE);
+  // disabled 45 check due to false detection of walls,
+  // when rover is not perfectly parallel
   bool rtn = rtn90; // (rtn90 && !rtn45) || (!rtn90 && rtn45)
   if (!rtn) {
     Serial.println("Right is clear");
