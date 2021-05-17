@@ -255,15 +255,15 @@ void autonomousAngledPath() {
 */
 
 // calculates median of 5 measurements
-long checkDistance(NewPing sensor) { // uses NewPing (disable for TinkerCAD)
-  long rtn = sensor.convert_cm(sensor.ping_median(5));
+long checkDistance(NewPing sensor, int measurements) { // uses NewPing (disable for TinkerCAD)
+  long rtn = sensor.convert_cm(sensor.ping_median(measurements));
   if (rtn == 0) { // ensure that there is no error reading of 0
     return DISTANCE_LIMIT;
   }
   return rtn;
 }
 long checkDistance() {
-  return checkDistance(sonar_1);
+  return checkDistance(sonar_1, 5);
 }
 long checkDistanceSingle(int TRIG_PIN, int ECHO_PIN) { // alternative function that doesn't use NewPing
   // trigger a pulse on the sonar module
@@ -283,7 +283,7 @@ long checkDistanceSingle(int TRIG_PIN, int ECHO_PIN) { // alternative function t
 // checks left and right with secondary sensors to
 // ensure the rover does not stray into a wall
 bool correctLeft() {
-  long secondaryLeftDist = checkDistance(sonar_2); // uses NewPing (disable for TinkerCAD)
+  long secondaryLeftDist = checkDistance(sonar_2, 3); // uses NewPing (disable for TinkerCAD)
   Serial.print("Dist from Left: ");
   Serial.println(secondaryLeftDist);
   if (secondaryLeftDist - 1 < SIDE_CORRECTION_DISTANCE) {
@@ -294,7 +294,7 @@ bool correctLeft() {
   return false;  
 }
 long correctRight() { 
-  long secondaryRightDist = checkDistance(sonar_3); // uses NewPing (disable for TinkerCAD)
+  long secondaryRightDist = checkDistance(sonar_3, 3); // uses NewPing (disable for TinkerCAD)
   Serial.print("Dist from Right: ");
   Serial.println(secondaryRightDist);
   if (secondaryRightDist - 1 < SIDE_CORRECTION_DISTANCE) {
