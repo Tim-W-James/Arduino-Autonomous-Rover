@@ -33,7 +33,7 @@ const int MOTOR2_CALIBRATION = -4; // right
 // SURFACE || TURN_TIME
 // maze    || 420
 // table   || 350
-const int MOTOR_TURN_TIME = 420;                     // 90 degrees
+const int MOTOR_TURN_TIME = 215;                     // 90 degrees
 const int MOTOR_TURN_TIME_45 = MOTOR_TURN_TIME*0.2;  // 45 degrees (adjusted) 0.35
 // time a rover will reverse before checking (ms)
 const int MOTOR_REVERSE_TIME = 200;
@@ -43,19 +43,19 @@ bool isReversing = false;
 // ultrasonic detects up to 336cm away - 5cm for error
 const long DISTANCE_LIMIT = 336 - 5;
 // allowed distance between rover and obstacles (cm)
-const long STOPPING_DISTANCE = 5;
+const long STOPPING_DISTANCE = 5.5;
 // allowed distance between rover and obstacles when turning (cm)
-const long TURN_CHECK_DISTANCE = 14;
+const long TURN_CHECK_DISTANCE = 23;
 // frequency of ultrasonic polling (ms)
-const int POLLING_DELAY = 15;
+const int POLLING_DELAY = 5;
 // frequency of ultrasonic polling for angled walls (ms)
-const int ANGLED_POLLING_DELAY = POLLING_DELAY*4;
+const int ANGLED_POLLING_DELAY = POLLING_DELAY*6;
 // max parameters based on expected maze dimensions, used for finding angled surfaces
 const int MAX_POSSIBLE_DIST = 30;
 // left/right correction distance (cm)
 const long SIDE_CORRECTION_DISTANCE = 3.5;
 // left/right correction amount (ms)
-const int CORRECTION_AMOUNT = 20;
+const int CORRECTION_AMOUNT = 12;
 bool hasCorrected = false;
 
 // output from sonar module
@@ -229,8 +229,8 @@ void autonomousAngledPath() {
   Serial.println("Checking if approaching angled wall...");
   
   // check left and right 45 degrees to be parallel with an angled wall
-  isObstacleLeft = checkLeft(50, STOPPING_DISTANCE*1.2);
-  isObstacleRight = checkRight(50, STOPPING_DISTANCE*1.2);
+  isObstacleLeft = checkLeft(45, STOPPING_DISTANCE*1.2);
+  isObstacleRight = checkRight(45, STOPPING_DISTANCE*1.2);
 
   // navigate depending on the presence of an angled wall, else wait until close enough
   // TODO improve this detection - sometimes turns early when following a parallel wall
