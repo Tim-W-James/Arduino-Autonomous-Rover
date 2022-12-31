@@ -29,7 +29,7 @@
   <h2 align="center">Arduino Autonomous Rover</h2>
 
   <p align="center">
-    rduino program for a rover with autonomous navigation.
+    Arduino program for a rover with autonomous navigation.
     <br />
     This project was created during my university studies at <b>ANU</b> in <b>2021</b> and has been transferred from the ANU GitLab server.
     <br />
